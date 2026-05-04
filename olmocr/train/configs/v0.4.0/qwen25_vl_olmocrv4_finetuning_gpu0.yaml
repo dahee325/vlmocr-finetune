@@ -1,0 +1,105 @@
+# Example OlmOCR Training Configuration with Torch Compile
+
+# Project metadata
+project_name: nh-vlmocr-finetune
+run_name: nh-ibk-gms-combined-finetune-0422-rank4-alpha4-learningrate-5e-6-cosine
+
+# Model configuration
+model:
+  name: allenai/olmOCR-2-7B-1025
+  trust_remote_code: true
+  torch_dtype: bfloat16
+  use_flash_attention: true
+  attn_implementation: flash_attention_2
+  
+  # LoRA settings
+  use_lora: true
+  lora_rank: 4
+  lora_alpha: 4 # 32 -> 8 (조금 더 세밀한 조정 가능)
+  lora_dropout: 0.1
+  lora_target_modules:
+    - q_proj
+    - v_proj
+    - k_proj
+    - o_proj
+    - gate_proj # 추가 모듈
+    - up_proj   # 추가 모듈
+    - down_proj # 추가 모듈
+
+# Dataset configuration
+dataset:
+  train:
+    - name: nh-training-data
+      root_dir: ./nh-data-ibk-combined/train  # 학습 데이터 경로
+      pipeline: &basic_pipeline
+        - name: FrontMatterParser
+          front_matter_class: PageResponse
+        - name: FilterOutRotatedDocuments
+        - name: ReformatLatexBoldItalic
+        - name: DatasetTextRuleFilter
+        - name: PDFRenderer
+          target_longest_image_dim: 1288 # 1288 -> 1536 (해상도 증가) | 1536 -> 1024 (OOM 완화, previous=1536)
+        - name: RotationAugmentation
+          probability: 0.02
+        - name: NewYamlFinetuningPromptWithNoAnchoring
+        - name: FrontMatterOutputFormat
+        - name: InstructUserMessages
+          prompt_first: true
+        - name: Tokenizer
+          masking_index: -100
+          end_of_message_token: "<|im_end|>"
+  eval:
+    - name: nh-eval-data
+      root_dir: ./nh-data-ibk-combined/eval  # 평가 데이터 경로
+      pipeline: *basic_pipeline
+
+# Training configuration
+training:
+  output_dir: ./checkpoints
+  num_train_epochs: 250 # 30 -> 40 으로 증가 | 40 -> 120 으로 추가 증가 | previous=2
+  
+  # Batch size and accumulation
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 16 # 0419: 8 -> 16 (메모리 사용량 증가)
+
+  gradient_checkpointing: True # previous=False (OOM 완화)
+  collator_max_token_len: 8192 # previous=8192 (OOM 완화)
+  
+  # Learning rate
+  # 0418 learning rate: 8e-6 -> best loss: 0.03
+  # 0419 learning rate: 1e-5 -> best loss: 
+  learning_rate: 5e-6 # (2e-5 → 1e-5 으로 수정, 절반 감소) | 1e-5 -> 8e-6 (조금 더 낮춰서 세밀하게 학습) | 8e-6 -> 5e-6
+  lr_scheduler_type: cosine # linear -> cosine
+  warmup_ratio: 0.15 # 0.1 -> 0.15 (웜업을 조금 더 길게 가져가서 초기 불안정성 완화)
+  
+  # Optimization
+  optim: adamw_torch
+  weight_decay: 0.1 # 0.01 -> 0.1 (가중치 폭주 방지)
+  max_grad_norm: 0.5 # 1.0 -> 0.5 (더 엄격한 그래디언트 안정화)
+
+  # Torch compile settings
+  torch_compile: false # true -> false (문제 발생 시 비활성화)
+  torch_compile_backend: inductor
+  torch_compile_mode: default
+  torch_compile_fullgraph: false
+  torch_compile_dynamic: false
+
+  seed: 300
+  data_seed: 301
+  
+  # Evaluation and checkpointing
+  evaluation_strategy: steps  
+  eval_steps: 5 # previous=5 (평가 구간 메모리 피크 완화)  
+  save_strategy: steps 
+  save_steps: 5 # previous=5  
+  save_total_limit: 20 # 5 -> 20 으로 변경
+  load_best_model_at_end: true # 학습 종료 후 가장 loss가 낮았던 체크포인트 채택
+  metric_for_best_model: eval_nh-eval-data_loss
+  greater_is_better: false
+  # Keep selection mostly eval-driven; add small train-loss tie-breaker.
+  best_model_eval_metric_weight: 0.9
+  best_model_train_loss_weight: 0.1
+  
+  report_to: 
+    - wandb
