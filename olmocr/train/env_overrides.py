@@ -1,6 +1,4 @@
 import os
-from dotenv import load_dotenv
-
 
 def get_env_bool(name, default=False):
     value = os.getenv(name)
@@ -26,11 +24,9 @@ def get_env_list(name, default):
         return default
     return [item.strip() for item in value.split(",")]
 
-def apply_env_overrides(config, env_path=None):
-    if env_path:
-        load_dotenv(env_path, override=True)
-    else:
-        load_dotenv(override=True)
+def apply_env_overrides(config):
+    # run_train.sh에서 source "$ENV_FILE"로 이미 환경변수를 export했기 때문에
+    # python-dotenv 없이 os.getenv()만 사용한다.
 
     # Model
     config.model.name = get_env_str("MODEL_NAME", config.model.name)
