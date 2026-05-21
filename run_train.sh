@@ -23,7 +23,7 @@ export PYTORCH_ALLOC_CONF="$TRAIN_ALLOC_CONF"
 if [[ "$TRAIN_MODE" == "single" ]]; then
   export CUDA_VISIBLE_DEVICES="${TRAIN_CUDA_VISIBLE_DEVICES_SINGLE:-0}"
   echo "[run_train] mode=single cuda=${CUDA_VISIBLE_DEVICES} config=${TRAIN_CONFIG_PATH}"
-  exec "$TRAIN_PYTHON_BIN" -m olmocr.train.train --config "$TRAIN_CONFIG_PATH"
+  exec "$TRAIN_PYTHON_BIN" -m olmocr.train.train2 --config "$TRAIN_CONFIG_PATH"
 fi
 
 if [[ "$TRAIN_MODE" == "multi" ]]; then
@@ -36,7 +36,7 @@ if [[ "$TRAIN_MODE" == "multi" ]]; then
   exec "$TRAIN_PYTHON_BIN" -m torch.distributed.run \
     --nproc_per_node "$NPROC" \
     --master_port "$TRAIN_MASTER_PORT" \
-    -m olmocr.train.train --config "$TRAIN_CONFIG_PATH"
+    -m olmocr.train.train2 --config "$TRAIN_CONFIG_PATH"
 fi
 
 echo "Unsupported TRAIN_MODE: $TRAIN_MODE (expected: single or multi)"
