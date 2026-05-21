@@ -550,7 +550,7 @@ def main():
     # 추가
     # Apply .env overrides
     logger.info("Applying env overrides")
-    config = apply_env_overrides(config, env_path=args.env_file)
+    config = apply_env_overrides(config)
 
     # 임시 로그 추가
     logger.info(f"[ENV OVERRIDE] model.name = {config.model.name}")
