@@ -23,6 +23,8 @@ from transformers import (
     AutoProcessor,
     Qwen2_5_VLForConditionalGeneration,
     Qwen2VLForConditionalGeneration,
+    AutoModelForCausalLM, 
+    AutoTokenizer,
     get_scheduler,
 )
 
@@ -598,19 +600,30 @@ def main():
 
     # Load model
     logger.info(f"Loading model: {config.model.name}")
-    if (
-        "qwen2.5-vl" in config.model.name.lower()
-        or "olmocr-2-7b-1025" in config.model.name.lower()
-        or "qwen3.5-9b" in config.model.name.lower()
-        or "qwen3" in config.model.name.lower()
+
+    model_name_lower = config.model.name.lower()
+
+    if "qwen3.5-9b" in model_name_lower:
+        logger.info("Detected Qwen3.5-9B text model. Loading with AutoModelForCausalLM.")
+        model_class = AutoModelForCausalLM
+        model = model_class.from_pretrained(config.model.name, **model_init_kwargs)
+
+    elif (
+        "qwen2.4-vl" in model_name_lower
+        or "olmocr-2-7b-1025" in model_name_lower
     ):
+        logger.info("Detected Qwen2.5-VL model. Loading with Qwen2_5_VLForConditionalGeneration.")
         model_class = Qwen2_5_VLForConditionalGeneration
         model = model_class.from_pretrained(config.model.name, **model_init_kwargs)
-    elif "qwen2-vl" in config.model.name.lower():
+    
+    elif "qwen2-vl" in model_name_lower:
+        logger.info("Detected Qwen2-VL model. Loading with Qwen2VLForConditionalGeneration.")
         model_class = Qwen2VLForConditionalGeneration
         model = model_class.from_pretrained(config.model.name, **model_init_kwargs)
+
     else:
-        raise NotImplementedError()
+        raise NotImplementedError(f"Unsupported model: {config.model.name}")
+    
 
     # 추가
     if getattr(config.training, "gradient_checkpointing", False):
