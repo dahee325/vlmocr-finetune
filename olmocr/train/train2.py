@@ -561,7 +561,7 @@ def main():
     logger.info(f"[ENV OVERRIDE] gradient_accumulation_steps = {config.training.gradient_accumulation_steps}")
 
     # 성공 출력 결과
-    # [ENV OVERRIDE] model.name = Qwen/Qwen3.5-VL-9B
+    # [ENV OVERRIDE] model.name = Qwen/Qwen3.5-9B
     # [ENV OVERRIDE] lora_rank = 8
     # [ENV OVERRIDE] learning_rate = 5e-06
 
@@ -603,7 +603,6 @@ def main():
         or "olmocr-2-7b-1025" in config.model.name.lower()
         or "qwen3.5-9b" in config.model.name.lower()
         or "qwen3" in config.model.name.lower()
-        or "qwen3.5-vl-9b" in config.model.name.lower() # 추가
     ):
         model_class = Qwen2_5_VLForConditionalGeneration
         model = model_class.from_pretrained(config.model.name, **model_init_kwargs)
