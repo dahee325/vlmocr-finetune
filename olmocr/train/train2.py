@@ -264,7 +264,10 @@ def load_checkpoint(
     else:
         model = model_class.from_pretrained(checkpoint_dir, **init_kwargs)
 
-    model.to(device)
+    if getattr(model, "hf_device_map", None) is None:
+        model.to(device)
+    else:
+        logger.info("device_map is already set. Skipping model.to(device).")
 
     optimizer.load_state_dict(torch.load(os.path.join(checkpoint_dir, "optimizer.pt"), map_location=device))
     lr_scheduler.load_state_dict(torch.load(os.path.join(checkpoint_dir, "scheduler.pt"), map_location=device))
@@ -302,7 +305,11 @@ def load_model_from_checkpoint(
     else:
         model = model_class.from_pretrained(checkpoint_dir, **init_kwargs)
 
-    model.to(device)
+    if getattr(model, "hf_device_map", None) is None:
+        model.to(device)
+    else:
+        logger.info("device_map is already set. Skipping model.to(device).")
+
     return model
 
 
@@ -727,7 +734,10 @@ def main():
 
         random.seed(worker_seed)
 
-    model.to(device)
+    if getattr(model, "hf_device_map", None) is None:
+        model.to(device)
+    else:
+        logger.info("device_map is already set. Skipping model.to(device).")
 
     if is_distributed_mode():
         model = DDP(model, device_ids=[device.index], output_device=device.index, find_unused_parameters=False)
