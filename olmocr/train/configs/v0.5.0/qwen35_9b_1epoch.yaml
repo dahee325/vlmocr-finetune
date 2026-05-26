@@ -77,7 +77,7 @@ dataset:
 
 # Training configuration
 training:
-  output_dir: ./checkpoints/qwen35_vl_9b_1epoch
+  output_dir: ./checkpoints/qwen35_vl_9b_train80_eval20
   num_train_epochs: 1
   
   # Batch size and accumulation
