@@ -1,6 +1,6 @@
 # Project metadata
 project_name: olmocr-qwen-vl-training
-run_name: qwen3.5-olmocrv5-1epoch-mix-1025-filtered-gms-data
+run_name: qwen35_9b_handwriting_train100_eval10
 
 # Model configuration
 model:
