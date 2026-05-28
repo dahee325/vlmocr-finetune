@@ -26,7 +26,7 @@ dataset:
 
   train:
     - name: processed_01_books_train_iabooks
-      root_dir: ./sample_qwen35_test/train/
+      root_dir: ./data/processed/train/
       pipeline: &basic_pipeline
         - name: FrontMatterParser
           front_matter_class: PageResponse
@@ -59,7 +59,7 @@ dataset:
 
   eval:
     - name: processed_00_documents_eval_s2pdf
-      root_dir: ./sample_qwen35_test/eval/
+      root_dir: ./data/processed/compare_eval/
       pipeline: *basic_pipeline
     # - name: processed_01_books_eval_iabooks
     #   root_dir: ./olmOCR-mix-1025-extracted/processed_01_books_eval/
@@ -77,7 +77,7 @@ dataset:
 
 # Training configuration
 training:
-  output_dir: ./checkpoints/qwen35_vl_9b_train80_eval20
+  output_dir: ./checkpoints/qwen35_9b_handwriting_train100_eval10
   num_train_epochs: 1
   
   # Batch size and accumulation
