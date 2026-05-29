@@ -457,10 +457,56 @@ def resolve_best_checkpoint_from_history(history: List[Dict[str, Any]], greater_
     return best_record.get("checkpoint")
 
 
+# 문자 단위 편집거리 계산
+def levenshtein_distance(ref: str, hyp: str) -> int:
+    n, m = len(ref), len(hyp)
+
+    if n == 0:
+        return m
+    
+    if m == 0:
+        return n
+    
+    dp = list(range(m + 1))
+
+    for i in range(1, n + 1):
+        prev = dp[0]
+        dp[0] = i
+        
+        for j in range(1, m + 1):
+            temp = dp[j]
+
+            if ref[i - 1] == hyp[j - 1]:
+                dp[j] = prev
+            else:
+                dp[j] = min(
+                    prev + 1, # replace
+                    dp[j] + 1, # delete
+                    dp[j - 1] + 1 # insert
+                )
+
+            prev = temp
+
+    return dp[m]
+
+
+# CER = 문자 단위 편집거리 / 정답 문자 수
+def calculate_cer(reference: str, prediction: str) -> float:
+    reference = reference.strip()
+    prediction = prediction.strip()
+
+    if len(reference) == 0:
+        return 0.0 if len(prediction) == 0 else 1.0
+    
+    distance = levenshtein_distance(reference, prediction)
+    return distance / len(reference)
+
+
 def evaluate_model(
     model: torch.nn.Module,
     eval_dataloaders: Dict[str, DataLoader],
     device: torch.device,
+    tokenizer
 ) -> Dict[str, float]:
     """Evaluate on all eval datasets and return average loss per dataset."""
     model.eval()
@@ -470,25 +516,91 @@ def evaluate_model(
         total_loss = 0.0
         num_batches = 0
 
+        total_cer = 0.0
+        num_cer_samples = 0
+
         with torch.no_grad():
             for batch in dataloader:
                 # Skip if batch is None (all samples were filtered out)
                 if batch is None:
                     continue
+                
                 batch = {k: v.to(device) for k, v in batch.items()}
+                
+                # 기존 loss 계산
                 with autocast(device_type="cuda", enabled=True, dtype=torch.bfloat16):
                     outputs = model(**batch)
                 total_loss += outputs.loss.item()
                 num_batches += 1
 
+                # CER 계산
+                if "labels" not in batch:
+                    continue
+
+                labels = batch["labels"].detach().cpu().clone()
+                labels[labels == -100] = tokenizer.pad_token_id
+
+                reference_texts = tokenizer.batch_decode(
+                    labels,
+                    skip_special_tokens=True,
+                )
+
+                generate_inputs = {
+                    k: v
+                    for k, v in batch.items()
+                    if k not in ["labels"]
+                }
+
+                generated_ids = model.generate(
+                    **generate_inputs,
+                    max_new_tokens=1024,
+                    do_sample=False,
+                )
+
+                # generate 결과에 prompt까지 포함될 수 있어서 input 이후만 사용
+                if "input_ids" in batch:
+                    input_len = batch["input_ids"].shape[1]
+                    generated_ids = generated_ids[:, input_len:]
+
+                prediction_texts = tokenizer.batch_decode(
+                    generated_ids,
+                    skip_special_tokens=True,
+                )
+
+                for ref, pred in zip(reference_texts, prediction_texts):
+                    cer = calculate_cer(ref, pred)
+                    total_cer += cer
+                    num_cer_samples += 1
+
         avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+        avg_cer = total_cer / num_cer_samples if num_cer_samples > 0 else 0.0
+
         eval_metrics[f"eval_{dataset_name}_loss"] = avg_loss
+        eval_metrics[f"eval_{dataset_name}_cer"] = avg_cer
+
         logger.info(f"Eval {dataset_name} loss: {avg_loss:.4f}")
+        logger.info(f"Eval {dataset_name} CER: {avg_cer: 4f}")
 
     # Compute overall eval loss as average across datasets (or customize as needed)
-    if eval_metrics:
-        overall_loss = sum(eval_metrics.values()) / len(eval_metrics)
-        eval_metrics["eval_loss"] = overall_loss
+    # if eval_metrics:
+    #     overall_loss = sum(eval_metrics.values()) / len(eval_metrics)
+    #     eval_metrics["eval_loss"] = overall_loss
+
+    loss_values = [
+        value for key, value in eval_metrics.items()
+        if key.endswith("_loss")
+    ]
+
+    cer_values = [
+        value for key, value in eval_metrics.items()
+        if key.endswith("_cer")
+    ]
+
+    if loss_values:
+        eval_metrics["eval_loss"] = sum(loss_values) / len(loss_values)
+
+    if cer_values:
+        eval_metrics["eval_cer"] = sum(cer_values) / len(cer_values)
 
     return eval_metrics
 
@@ -927,7 +1039,7 @@ def main():
 
     # Always evaluate on start (rank 0 only in DDP)
     if is_main_process():
-        metrics = evaluate_model(model, eval_dataloaders, device)
+        metrics = evaluate_model(model, eval_dataloaders, device, processor.tokenizer)
         logger.info(f"Initial evaluation: {metrics}")
         if "wandb" in config.training.report_to:
             wandb.log(metrics, step=global_step)
@@ -1063,7 +1175,7 @@ def main():
                 # Evaluation
                 metric_improved = False
                 if config.training.eval_steps > 0 and global_step % config.training.eval_steps == 0 and global_step > 0 and is_main_process():
-                    metrics = evaluate_model(model, eval_dataloaders, device)
+                    metrics = evaluate_model(model, eval_dataloaders, device, processor.tokenizer)
                     logger.info(f"Evaluation at step {global_step}: {metrics}")
                     if "wandb" in config.training.report_to:
                         wandb.log(metrics, step=global_step)
@@ -1206,7 +1318,7 @@ def main():
         logger.info(f"Training completed at epoch {final_epoch:.3f}, step {global_step}, samples {samples_seen}")
 
         # Final evaluation
-        final_metrics = evaluate_model(model, eval_dataloaders, device)
+        final_metrics = evaluate_model(model, eval_dataloaders, device, processor.tokenizer)
         logger.info(f"Final evaluation metrics: {final_metrics}")
         write_best_checkpoint_ranking(full_output_dir, best_checkpoint_history, config.training.metric_for_best_model)
         logger.info(f"Saved best-checkpoint ranking to {_ranking_file_path(full_output_dir)}")
